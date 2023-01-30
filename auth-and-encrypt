@@ -1,0 +1,57 @@
+
+mkdir /etc/node_exporter/
+touch /etc/node_exporter/config.yml
+chmod 700 /etc/node_exporter
+chmod 600 /etc/node_exporter/config.yml
+chown -R nodeusr:nodeusr /etc/node_exporter
+
+vi /etc/systemd/system/node_exporter.service
+ExecStart=/usr/local/bin/node_exporter --web.config=/etc/node_exporter/config.yml
+
+systemctl daemon-reload
+systemctl restart node_exporter
+
+# Generate secret-password
+
+apt update
+apt install apache2-utils -y
+
+htpasswd -nBC 10 "" | tr -d ':\n'; echo
+
+vi /etc/node_exporter/config.yml
+basic_auth_users:
+  prometheus: <hashed-password>
+
+# Configure Prometheus to use basic_auth
+vi /etc/prometheus/prometheus.yml
+basic_auth:
+  username: prometheus
+  password: secret-password
+
+systemctl restart prometheus
+
+
+
+# Authentication
+
+openssl req -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout node_exporter.key -out node_exporter.crt -subj "/C=US/ST=California/L=Oakland/O=MyOrg/CN=localhost" -addext "subjectAltName = DNS:localhost"
+
+mv node_exporter.crt node_exporter.key /etc/node_exporter/
+
+chown nodeusr.nodeusr /etc/node_exporter/node_exporter.key
+chown nodeusr.nodeusr /etc/node_exporter/node_exporter.crt
+
+vi /etc/node_exporter/config.yml
+
+systemctl restart node_exporter
+
+scp root@node01:/etc/node_exporter/node_exporter.crt /etc/prometheus/node_exporter.crt
+chown prometheus.prometheus /etc/prometheus/node_exporter.crt
+
+vi /etc/prometheus/prometheus.yml 
+scheme: https
+    tls_config:
+      ca_file: /etc/prometheus/node_exporter.crt
+      insecure_skip_verify: true
+
+systemctl restart prometheus
